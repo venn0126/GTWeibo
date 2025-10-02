@@ -4,12 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+      - '*.*.*'
+      - '*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to release (optional if not using push tag)'
         required: false
         default: ''
+
+permissions:
+  contents: write
 
 jobs:
   build:
