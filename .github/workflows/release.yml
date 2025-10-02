@@ -4,12 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+      - '*.*.*'
+      - '*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to release (optional if not using push tag)'
         required: false
         default: ''
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -29,9 +34,27 @@ jobs:
 
       - name: Setup Theos
         run: |
-          git clone --recursive https://github.com/theos/theos "$THEOS"
-          # Fetch iOS SDKs (uses Git LFS)
-          git clone https://github.com/theos/sdks "$THEOS/sdks"
+          # Clone or update Theos
+          if [ -d "$THEOS/.git" ]; then
+            echo "[theos] exists, updating..."
+            git -C "$THEOS" fetch --all --tags
+            git -C "$THEOS" submodule update --init --recursive
+          else
+            rm -rf "$THEOS"
+            git clone --recursive https://github.com/theos/theos "$THEOS"
+          fi
+
+          # Clone or update SDKs (uses Git LFS)
+          if [ -d "$THEOS/sdks/.git" ]; then
+            echo "[sdks] exists, updating..."
+            git -C "$THEOS/sdks" fetch --all
+            git -C "$THEOS/sdks" pull --ff-only || true
+            git -C "$THEOS/sdks" lfs pull || true
+          else
+            rm -rf "$THEOS/sdks"
+            git clone https://github.com/theos/sdks "$THEOS/sdks"
+            git -C "$THEOS/sdks" lfs pull || true
+          fi
 
       - name: Show environment
         run: |
