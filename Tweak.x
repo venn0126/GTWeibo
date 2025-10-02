@@ -1,59 +1,126 @@
+
+/// Block Launch Ad
 %hook WBAdSdkFlashAdView
 
 - (id)initWithWindow:(id)arg1 {
-	TLog(@"WBAdSdkFlashAdView initWithWindow %@",arg1);
-	return nil; // 直接禁用开屏广告
+    TLog(@"WBAdSdkFlashAdView initWithWindow %@",arg1);
+    return nil; 
 }
 
 %end
 
 
 
-%hook WBS3CollectionViewManager
+// Block Home Ad
+%hook WBS3ItemModelFactory
 
-// 1) 出队后判定并隐藏/压缩
-- (id)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
-    UICollectionViewCell *cell = %orig;
++ (id)modelsForDicArray:(id)arg1 userInfo:(id)arg2 {
+    id filtered = arg1;
     @try {
-        if ([cell isKindOfClass:[%c(WBS3CollectionViewCell) class]]) {
-            id card = ((WBS3CollectionViewCell *)cell).card;
-            BOOL isAd = [GTTool gt_isAdByCard:card];
-            if (isAd) {
-                TLog(@"[AD] cellFor index:%@ -> compress height", indexPath);
-                [GTTool gt_markAdIndexPath:indexPath forOwner:self];
-                // 不隐藏，交由尺寸回调压缩高度
-                [GTTool gt_hideAndCompressCell:cell];
-                // cell.contentView.backgroundColor = [UIColor greenColor];
-            } else {
-                [GTTool gt_resetCellIfNeeded:cell];
-                // cell.contentView.backgroundColor = [UIColor clearColor];
+        if ([arg1 isKindOfClass:[NSArray class]]) {
+            NSArray *arr = (NSArray *)arg1;
+            NSMutableArray *keep = [NSMutableArray arrayWithCapacity:arr.count];
+            for (id item in arr) {
+                BOOL drop = NO;
+                if ([item isKindOfClass:[NSDictionary class]]) {
+                    drop = [GTTool gt_isAdDataDict:(NSDictionary *)item];
+                }
+                if (!drop) {
+                    [keep addObject:item];
+                }
+            }
+            filtered = [keep copy];
+            if ([(NSArray *)filtered count] != arr.count) {
+                TLog(@"[Filter-Factory] drop %ld ads from %ld", (long)(arr.count - [(NSArray *)filtered count]), (long)arr.count);
             }
         }
     } @catch (__unused NSException *e) {}
-    return cell;
-}
-
-
-// 结束展示时清理复用状态
-- (void)collectionView:(UICollectionView *)collectionView didEndDisplayingCell:(UICollectionViewCell *)cell forItemAtIndexPath:(NSIndexPath *)indexPath {
-	%orig;
-	[GTTool gt_resetCellIfNeeded:cell];
+    return %orig(filtered, arg2);
 }
 
 %end
 
 
-%hook WBS3ItemModel
+static const void *kGTFilteredCardsKey = &kGTFilteredCardsKey;
+static const void *kGTFilteredReadyKey = &kGTFilteredReadyKey;
 
-- (NSDictionary *)dataDic {
-	NSDictionary *r = %orig;
-	// TLog(@"WBS3ItemModel dataDic---%@",r);
-	// [GTTool gt_logDictionaryDeep:r prefix:@""];
+%hook WBSCellCardGroup
 
-	return r;
+- (void)creatCellCards {
+    %orig;
+    @try {
+        NSArray *cards = nil;
+        @try { cards = [self cards]; } @catch (__unused NSException *e) {}
+        if (![cards isKindOfClass:[NSArray class]] || cards.count == 0) {
+            // 清空标记
+            objc_setAssociatedObject(self, kGTFilteredCardsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(self, kGTFilteredReadyKey, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            return;
+        }
+
+        NSMutableArray *keep = [NSMutableArray arrayWithCapacity:cards.count];
+        NSInteger drop = 0;
+        for (id card in cards) {
+            BOOL isAd = [GTTool gt_isAdByCard:card];
+            if (!isAd) {
+                [keep addObject:card];
+            } else {
+                drop++;
+            }
+        }
+
+        NSArray *filtered = [keep copy];
+        objc_setAssociatedObject(self, kGTFilteredCardsKey, filtered, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(self, kGTFilteredReadyKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (drop > 0) {
+            TLog(@"[Filter-Group] group:%p drop %ld / %ld", self, (long)drop, (long)cards.count);
+        }
+    } @catch (__unused NSException *e) {}
 }
 
+- (unsigned long long)numberOfItems {
+    @try {
+        NSNumber *ready = objc_getAssociatedObject(self, kGTFilteredReadyKey);
+        if (ready.boolValue) {
+            NSArray *filtered = objc_getAssociatedObject(self, kGTFilteredCardsKey);
+            if ([filtered isKindOfClass:[NSArray class]]) {
+                return (unsigned long long)filtered.count;
+            }
+        }
+    } @catch (__unused NSException *e) {}
+    return %orig;
+}
 
+- (id)cellCardAtIndex:(long long)idx {
+    @try {
+        NSNumber *ready = objc_getAssociatedObject(self, kGTFilteredReadyKey);
+        if (ready.boolValue) {
+            NSArray *filtered = objc_getAssociatedObject(self, kGTFilteredCardsKey);
+            if ([filtered isKindOfClass:[NSArray class]]) {
+                if (idx >= 0 && idx < (long long)filtered.count) {
+                    return filtered[(NSUInteger)idx];
+                }
+            }
+        }
+    } @catch (__unused NSException *e) {}
+    return %orig;
+}
+
+- (id)cards {
+    @try {
+        NSNumber *ready = objc_getAssociatedObject(self, kGTFilteredReadyKey);
+        if (ready.boolValue) {
+            NSArray *filtered = objc_getAssociatedObject(self, kGTFilteredCardsKey);
+            if ([filtered isKindOfClass:[NSArray class]]) {
+                return filtered;
+            }
+        }
+    } @catch (__unused NSException *e) {}
+    return %orig;
+}
 
 %end
+
+
+/// Block Video Ad
 

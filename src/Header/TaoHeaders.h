@@ -46,3 +46,10 @@ typedef id CDUnknownFunctionPointerType;
 
 
 @end
+
+
+@interface WBSCellCardGroup : NSObject 
+
+@property(readonly, nonatomic) NSArray *cards;
+
+@end

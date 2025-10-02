@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Detect if a card/model represents an ad.
 + (BOOL)gt_isAdByCard:(id)card; // expects WBS3CellCardProtocol-like object
 + (BOOL)gt_isAdModel:(id)model; // expects WBS3ItemModel-like object
++ (BOOL)gt_isAdDataDict:(NSDictionary *)dict;
 
 // UI handling
 + (void)gt_hideAndCompressCell:(UICollectionViewCell *)cell;

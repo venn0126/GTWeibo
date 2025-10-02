@@ -45,6 +45,29 @@ static const void *kGTOwnerAdSetKey = &kGTOwnerAdSetKey;
     return isAd;
 }
 
++ (BOOL)gt_isAdDataDict:(NSDictionary *)dict {
+    if (![dict isKindOfClass:[NSDictionary class]]) return NO;
+    BOOL isAd = NO;
+    @try {
+        id data = dict[@"data"]; // 可能为 NSDictionary
+        if ([data isKindOfClass:[NSDictionary class]]) {
+            id adLogs = ((NSDictionary *)data)[@"ad_actionlogs"]; // 规范字段
+            // ad_actionlogs 有效：字典且 count>0，或数组且 count>0，或字符串非空
+            if ([adLogs isKindOfClass:[NSDictionary class]]) {
+                isAd = ([(NSDictionary *)adLogs count] > 0);
+            } else if ([adLogs isKindOfClass:[NSArray class]]) {
+                isAd = ([(NSArray *)adLogs count] > 0);
+            } else if ([adLogs isKindOfClass:[NSString class]]) {
+                isAd = ([(NSString *)adLogs length] > 0);
+            } else if (adLogs) {
+                // 存在其他非空类型也视为有效
+                isAd = YES;
+            }
+        }
+    } @catch (__unused NSException *e) {}
+    return isAd;
+}
+
 + (BOOL)gt_isAdByCard:(id)card {
     if (!card) return NO;
     id model = nil;
