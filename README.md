@@ -9,12 +9,6 @@ Note: This project is under active development and currently focuses on ad remov
 - Remove feed ads in the main timeline
 - Disable/skip startup splash ad
 
-## 🖼 Screenshots
-
-Add your screenshots here (optional):
-- 1.png
-- 2.png
-- 3.png
 
 ## 🛠 Build Instructions
 
