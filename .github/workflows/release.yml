@@ -1,0 +1,106 @@
+name: Build and Release (Theos)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (optional if not using push tag)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: Build .deb
+    runs-on: macos-latest
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Homebrew deps (dpkg, ldid, git-lfs)
+        run: |
+          brew update
+          brew install dpkg ldid git-lfs || true
+          git lfs install
+
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos "$THEOS"
+          # Fetch iOS SDKs (uses Git LFS)
+          git clone https://github.com/theos/sdks "$THEOS/sdks"
+
+      - name: Show environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          echo THEOS=$THEOS
+          ls -la "$THEOS/sdks" || true
+
+      - name: Build package (FINALPACKAGE=1)
+        run: |
+          make clean || true
+          make package FINALPACKAGE=1 THEOS="$THEOS"
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          mkdir -p artifacts
+          shopt -s nullglob
+          for f in packages/*.deb; do
+            echo "Found package: $f"
+            cp -f "$f" artifacts/
+          done
+          count=$(ls -1 artifacts/*.deb 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$count" = "0" ]; then
+            echo "No .deb produced; failing build" >&2
+            exit 1
+          fi
+          echo "artifacts_count=$count" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: artifacts/*.deb
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-packages
+          path: dist
+
+      - name: Determine tag
+        id: vars
+        shell: bash
+        run: |
+          # Prefer push tag; fallback to workflow input
+          ref_tag="${GITHUB_REF##*/}"
+          if [[ "$GITHUB_REF" != refs/tags/* || -z "$ref_tag" || "$ref_tag" == "refs/tags" ]]; then
+            ref_tag="${{ github.event.inputs.tag }}"
+          fi
+          if [[ -z "$ref_tag" ]]; then
+            echo "No tag detected. Provide a tag via push or workflow_dispatch input." >&2
+            exit 1
+          fi
+          echo "tag=$ref_tag" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
