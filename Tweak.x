@@ -29,9 +29,11 @@
                     [keep addObject:item];
                 }
             }
-            filtered = [keep copy];
-            if ([(NSArray *)filtered count] != arr.count) {
-                TLog(@"[Filter-Factory] drop %ld ads from %ld", (long)(arr.count - [(NSArray *)filtered count]), (long)arr.count);
+            if (keep.count != arr.count) {
+                filtered = [keep copy];
+                TLog(@"[Filter-Factory] drop %ld ads from %ld", (long)(arr.count - keep.count), (long)arr.count);
+            } else {
+                filtered = arr; // 无需复制，节约内存与时间
             }
         }
     } @catch (__unused NSException *e) {}
@@ -47,6 +49,9 @@ static const void *kGTFilteredReadyKey = &kGTFilteredReadyKey;
 %hook WBSCellCardGroup
 
 - (void)creatCellCards {
+    // 清理旧的缓存标记，确保读取的是最新数据
+    objc_setAssociatedObject(self, kGTFilteredCardsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(self, kGTFilteredReadyKey, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig;
     @try {
         NSArray *cards = nil;
@@ -69,11 +74,15 @@ static const void *kGTFilteredReadyKey = &kGTFilteredReadyKey;
             }
         }
 
-        NSArray *filtered = [keep copy];
-        objc_setAssociatedObject(self, kGTFilteredCardsKey, filtered, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(self, kGTFilteredReadyKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (drop > 0) {
+            NSArray *filtered = [keep copy];
+            objc_setAssociatedObject(self, kGTFilteredCardsKey, filtered, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(self, kGTFilteredReadyKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             TLog(@"[Filter-Group] group:%p drop %ld / %ld", self, (long)drop, (long)cards.count);
+        } else {
+            // 未过滤到广告，避免无谓的关联对象设置
+            objc_setAssociatedObject(self, kGTFilteredCardsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(self, kGTFilteredReadyKey, @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
     } @catch (__unused NSException *e) {}
 }
@@ -123,4 +132,3 @@ static const void *kGTFilteredReadyKey = &kGTFilteredReadyKey;
 
 
 /// Block Video Ad
-

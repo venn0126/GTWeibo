@@ -14,6 +14,16 @@
 
 static const void *kGTCellAdFlagKey = &kGTCellAdFlagKey;
 static const void *kGTOwnerAdSetKey = &kGTOwnerAdSetKey;
+static const void *kGTDictAdCacheKey = &kGTDictAdCacheKey;
+
+static inline NSNumber *GT_cachedFlag(id obj, const void *key) {
+    return obj ? objc_getAssociatedObject(obj, key) : nil;
+}
+
+static inline void GT_storeFlag(id obj, const void *key, BOOL value) {
+    if (!obj) return;
+    objc_setAssociatedObject(obj, key, @(value), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 + (BOOL)gt_isAdModel:(id)model {
     if (!model) return NO;
@@ -23,22 +33,7 @@ static const void *kGTOwnerAdSetKey = &kGTOwnerAdSetKey;
         if ([model respondsToSelector:@selector(dataDic)]) {
             id dictObj = ((id (*)(id, SEL))objc_msgSend)(model, @selector(dataDic));
             if ([dictObj isKindOfClass:[NSDictionary class]]) {
-                NSDictionary *dict = (NSDictionary *)dictObj;
-                id data = dict[@"data"]; // 可能为 NSDictionary
-                if ([data isKindOfClass:[NSDictionary class]]) {
-                    id adLogs = ((NSDictionary *)data)[@"ad_actionlogs"]; // 规范字段
-                    // ad_actionlogs 有效：字典且 count>0，或数组且 count>0，或字符串非空
-                    if ([adLogs isKindOfClass:[NSDictionary class]]) {
-                        isAd = ([(NSDictionary *)adLogs count] > 0);
-                    } else if ([adLogs isKindOfClass:[NSArray class]]) {
-                        isAd = ([(NSArray *)adLogs count] > 0);
-                    } else if ([adLogs isKindOfClass:[NSString class]]) {
-                        isAd = ([(NSString *)adLogs length] > 0);
-                    } else if (adLogs) {
-                        // 存在其他非空类型也视为有效
-                        isAd = YES;
-                    }
-                }
+                isAd = [self gt_isAdDataDict:(NSDictionary *)dictObj];
             }
         }
     } @catch (__unused NSException *e) {}
@@ -47,6 +42,14 @@ static const void *kGTOwnerAdSetKey = &kGTOwnerAdSetKey;
 
 + (BOOL)gt_isAdDataDict:(NSDictionary *)dict {
     if (![dict isKindOfClass:[NSDictionary class]]) return NO;
+    BOOL isMutableDict = [dict isKindOfClass:[NSMutableDictionary class]];
+    if (!isMutableDict) {
+        NSNumber *cache = GT_cachedFlag(dict, kGTDictAdCacheKey);
+        if (cache) {
+            return cache.boolValue;
+        }
+    }
+
     BOOL isAd = NO;
     @try {
         id data = dict[@"data"]; // 可能为 NSDictionary
@@ -65,6 +68,9 @@ static const void *kGTOwnerAdSetKey = &kGTOwnerAdSetKey;
             }
         }
     } @catch (__unused NSException *e) {}
+    if (!isMutableDict) {
+        GT_storeFlag(dict, kGTDictAdCacheKey, isAd);
+    }
     return isAd;
 }
 
